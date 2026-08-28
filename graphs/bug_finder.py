@@ -1,7 +1,7 @@
 from langchain_ollama import ChatOllama
 from langchain_anthropic import ChatAnthropic
 from responses.agent_comment import AgentReview
-from responses.agent_state import ReviewState
+from responses.agent_state import ReviewState, PullRequestDetailState
 
 llm = ChatOllama(
   model='qwen3.5:2b'
@@ -11,116 +11,55 @@ from langchain.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 
 
-sys_prompt = """
-You are an expert software engineer specializing in detecting bugs in Pull Requests.
+sys_prompt = """You are an expert software engineer specializing in detecting bugs in Pull Requests.
 
 Your task is to analyze the provided PR diff and identify potential bugs, regressions, and incorrect behavior introduced by the changes.
 
 Focus ONLY on functional correctness. Do not report general formatting, style, or lint issues unless they directly cause incorrect behavior.
 
-Analyze the changes carefully in the context of the surrounding code.
+## Bug Categories
 
-Look for:
+- Logic Errors: Incorrect conditions, calculations, comparisons, control flow, or return values
+- Edge Cases: Empty/null values, missing parameters, boundary conditions, off-by-one errors
+- State and Data Issues: Incorrect state updates, unexpected mutations, inconsistent state
+- API and Integration Bugs: Incorrect parameters, response handling, error handling, status codes
+- Concurrency and Async Bugs: Race conditions, incorrect async/await, wrong execution order
+- Error Handling: Incorrectly handled exceptions, silently ignored errors, unexpected failure paths
+- Regression Risks: Breaking existing functionality, violating existing assumptions
+- Resource and Lifecycle Bugs: Resources not released, incorrect connection/session handling
 
-1. Logic Errors
-   - Incorrect conditions or boolean logic
-   - Incorrect calculations
-   - Wrong comparisons
-   - Incorrect control flow
-   - Missing or incorrect return values
-
-2. Edge Cases
-   - Empty or null values
-   - Missing parameters
-   - Boundary conditions
-   - Unexpected input
-   - Duplicate or missing data
-   - Off-by-one errors
-
-3. State and Data Issues
-   - Incorrect state updates
-   - Mutated data that should not be mutated
-   - Incorrect data transformations
-   - Inconsistent state between components or services
-   - Incorrect assumptions about data
-
-4. API and Integration Bugs
-   - Incorrect API parameters
-   - Incorrect response handling
-   - Missing error handling
-   - Incorrect status-code handling
-   - Breaking changes between components
-   - Incorrect database or external-service interactions
-
-5. Concurrency and Async Bugs
-   - Race conditions
-   - Incorrect async/await usage
-   - Unhandled promises
-   - Operations executing in the wrong order
-   - Incorrect assumptions about asynchronous behavior
-
-6. Error Handling
-   - Exceptions that are incorrectly handled
-   - Errors that are silently ignored
-   - Incorrect fallback behavior
-   - Code paths that can fail unexpectedly
-
-7. Regression Risks
-   - Changes that break existing functionality
-   - Changes that violate existing assumptions
-   - Removed or modified behavior that other code depends on
-
-8. Resource and Lifecycle Bugs
-   - Resources not released correctly
-   - Incorrect connection/session handling
-   - Incorrect cleanup
-   - Invalid object or resource lifecycle management
-
-Review the diff line by line and consider how each meaningful change affects the existing behavior.
-
-IMPORTANT RULES:
+## Important Rules
 
 - Only report issues that are reasonably likely to be real bugs.
 - Do not report speculative problems without evidence from the code.
-- Do not report stylistic preferences.
-- Do not report formatting or lint issues.
+- Do not report stylistic preferences, formatting, or lint issues.
 - Do not report security issues unless they directly result in functional incorrectness.
 - Consider the surrounding code when determining whether something is actually a bug.
 - Pay particular attention to newly added or modified lines.
-- If the code is correct, explicitly state that no significant bugs were found.
-- Avoid duplicate findings.
+- Do not invent bugs simply to produce findings.
 
-For every bug you identify, provide:
+## Severity Levels
 
-- Severity: Critical / High / Medium / Low
-- Location: File path and line number or relevant changed code
-- Title: Short description of the bug
-- Explanation: Why this is a bug and what behavior it can cause
-- Suggested Fix: A concise description of how it should be fixed
+- critical: Complete functional breakdown, data loss, or production crash
+- high: Significant incorrect behavior affecting core functionality
+- medium: Incorrect behavior in non-critical paths or specific conditions
+- low: Minor incorrect behavior with limited impact
 
-Use the following format:
+## Output Format
 
-BUG #1
-Severity: High
-Location: path/to/file.py:42
-Title: Incorrect condition causes unauthorized execution
+You MUST return a JSON object with a "comments" array. Each comment object must have exactly these fields:
 
-Explanation:
-Explain precisely why the changed code can produce incorrect behavior.
+- title: Short, specific description of the bug
+- description: Detailed explanation of why this is a bug and what incorrect behavior it causes
+- category: One of "bug", "lint", "security", "performance", "code_quality", "maintainability", "testing", "documentation", "style", "other"
+- severity: One of "critical", "high", "medium", "low", "info"
+- file_path: Path of the file containing the issue
+- lines: Affected line or line range, e.g. "42" or "42-48"
+- suggestion: Recommended fix
+- rationale: Reasoning explaining why the suggested change is appropriate
+- suggested_code: Optional example of corrected code, or null
 
-Suggested Fix:
-Explain the appropriate correction.
-
-At the end, provide a summary:
-
-Total Bugs: <number>
-Critical: <number>
-High: <number>
-Medium: <number>
-Low: <number>
-
-Overall Assessment:
-<Brief assessment of whether the PR introduces meaningful functional risks.>
+If no significant bugs are found, return an empty comments array.
 """
 
 user_input: str = ""
@@ -166,7 +105,8 @@ graph = builder.compile(checkpointer=memory)
 
 graph.get_graph().draw_mermaid_png(output_file_path="images/bug_finder.png")
 
-def bug_finder_agent(file_diff: str):
+def bug_finder_agent(input_state: PullRequestDetailState):
+    file_diff = input_state["file_diff"]
     result = graph.invoke(
         {
             "file_diff": file_diff,
@@ -175,4 +115,5 @@ def bug_finder_agent(file_diff: str):
         },
         config=config
     )
-    print(result['review'])
+    return {"reviews": result['review']['comments']}
+ 

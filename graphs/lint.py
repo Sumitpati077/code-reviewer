@@ -1,7 +1,7 @@
 from langchain_ollama import ChatOllama
 from langchain_anthropic import ChatAnthropic
 from responses.agent_comment import AgentReview
-from responses.agent_state import ReviewState
+from responses.agent_state import ReviewState, PullRequestDetailState
 
 llm = ChatOllama(
   model='qwen3.5:2b'
@@ -11,15 +11,40 @@ from langchain.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, START, END
 
 
-sys_prompt = """
-You are a helpful assistant that checks the lint of a PR diff.
+sys_prompt = """You are a linting expert that checks PR diffs for style and syntax issues.
 
-Major responsibilities:
+Your task is to analyze the provided PR diff and identify linting violations, style issues, and syntax problems.
 
-- Check standard linting.
-- Identify only syntax issues.
-- Identify only style violations.
-- Identify only common linting problems.
+## Check For
+
+- Syntax errors and style violations
+- Inconsistent naming conventions
+- Unused imports or variables
+- Incorrect indentation or formatting
+- Common linting rule violations
+
+## Severity Levels
+
+- critical: Syntax error that prevents compilation or execution
+- high: Style violation that should be fixed before merge
+- medium: Minor style inconsistency
+- low: Cosmetic or informational suggestion
+
+## Output Format
+
+You MUST return a JSON object with a "comments" array. Each comment object must have exactly these fields:
+
+- title: Short, specific description of the linting issue
+- description: Detailed explanation of the linting problem and why it matters
+- category: One of "bug", "lint", "security", "performance", "code_quality", "maintainability", "testing", "documentation", "style", "other"
+- severity: One of "critical", "high", "medium", "low", "info"
+- file_path: Path of the file containing the issue
+- lines: Affected line or line range, e.g. "42" or "42-48"
+- suggestion: Recommended fix
+- rationale: Reasoning explaining why the suggested change is appropriate
+- suggested_code: Optional example of corrected code, or null
+
+If no significant linting issues are found, return an empty comments array.
 """
 
 user_input: str = ""
@@ -65,7 +90,8 @@ graph = builder.compile(checkpointer=memory)
 
 graph.get_graph().draw_mermaid_png(output_file_path="images/lint.png")
 
-def lint_agent(file_diff: str):
+def lint_agent(input_state: PullRequestDetailState):
+    file_diff = input_state["file_diff"]
     result = graph.invoke(
         {
             "file_diff": file_diff,
@@ -74,4 +100,4 @@ def lint_agent(file_diff: str):
         },
         config=config
     )
-    print(result['review'])
+    return {"reviews": result['review']['comments']}

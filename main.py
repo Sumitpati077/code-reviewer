@@ -13,8 +13,8 @@ def main():
     pr = fetch_pr("Sumitpati077/node_project",7)
     for index, file in enumerate(fetch_pr_diff(pr)):
         if index == 0:
-            # lint_agent(file.patch)
-            # bug_finder_agent(file.patch)
+            lint_agent(file.patch)
+            bug_finder_agent(file.patch)
             security_agent(file.patch)
 
  

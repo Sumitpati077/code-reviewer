@@ -1,15 +1,14 @@
 from langchain_ollama import ChatOllama
 from langchain_anthropic import ChatAnthropic
+from responses.agent_comment import AgentReview
+from responses.agent_state import ReviewState
 
 llm = ChatOllama(
   model='qwen3.5:2b'
-)
+).with_structured_output(AgentReview)
 
-from langchain.messages import HumanMessage, SystemMessage, AIMessage
-from langgraph.graph import MessagesState, StateGraph, START, END
-
-class LintState(MessagesState):
-    file_diff: str
+from langchain.messages import HumanMessage, SystemMessage
+from langgraph.graph import StateGraph, START, END
 
 
 sys_prompt = """
@@ -126,7 +125,7 @@ Overall Assessment:
 
 user_input: str = ""
 
-def _get_user_prompt(state: LintState):
+def _get_user_prompt(state: ReviewState):
     """Prompt the user for input and return it as a HumanMessage."""
     
     file_diff = state["file_diff"]
@@ -134,23 +133,27 @@ def _get_user_prompt(state: LintState):
         "messages": [
             SystemMessage(content=sys_prompt),
             HumanMessage(content=f"""
-Revie the following PR diff for linting issues:
+Revie the following PR diff for bugs:
 ```diff
 {file_diff}
 ```
-Report the linting issues you find.
+Report the bugs you find.
                          """)
         ]
     }
 
-def _calling_llm(state: LintState):
-    return { "messages": [llm.invoke(state["messages"])]}
+def _calling_llm(state: ReviewState):
+    review = llm.invoke(state["messages"])
+    
+    return {
+      "review": review
+    }
   
-builder = StateGraph(LintState)
+builder = StateGraph(ReviewState)
 builder.add_node("get_user_prompt", _get_user_prompt)
 builder.add_node("calling_llm", _calling_llm)
 
-config = {"configurable": {"thread_id": 1}}
+config = {"configurable": {"thread_id": "1"}}
 
 
 builder.add_edge(START, "get_user_prompt")
@@ -168,7 +171,8 @@ def bug_finder_agent(file_diff: str):
         {
             "file_diff": file_diff,
             "messages": [],
+            "review": None
         },
         config=config
     )
-    print(result['messages'][-1].content)
+    print(result['review'])

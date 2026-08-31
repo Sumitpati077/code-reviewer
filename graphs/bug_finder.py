@@ -115,5 +115,5 @@ def bug_finder_agent(input_state: PullRequestDetailState):
         },
         config=config
     )
-    return {"reviews": result['review']['comments']}
+    return {"reviews": result['review'].comments}
  

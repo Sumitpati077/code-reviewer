@@ -100,4 +100,5 @@ def lint_agent(input_state: PullRequestDetailState):
         },
         config=config
     )
-    return {"reviews": result['review']['comments']}
+    print(result)
+    return {"reviews": result['review'].comments}

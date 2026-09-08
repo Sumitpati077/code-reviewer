@@ -2,10 +2,15 @@ from langchain_ollama import ChatOllama
 from langchain_anthropic import ChatAnthropic
 from responses.agent_comment import AgentReview
 from responses.agent_state import ReviewState, PullRequestDetailState
+import os
 
 
-llm = ChatOllama(
-  model='qwen3.5:2b'
+# llm = ChatOllama(
+#   model=os.getenv('MODEL_NAME', 'qwen3.5:2b')
+# ).with_structured_output(AgentReview)
+
+llm = ChatAnthropic(
+    model="claude-haiku-4-5-20251001"
 ).with_structured_output(AgentReview)
 
 from langchain.messages import HumanMessage, SystemMessage
@@ -72,11 +77,12 @@ def _get_user_prompt(state: ReviewState):
     """Prompt the user for input and return it as a HumanMessage."""
     
     file_diff = state["file_diff"]
+    file_name = state["file_name"]
     return {
         "messages": [
             SystemMessage(content=sys_prompt),
             HumanMessage(content=f"""
-Revie the following PR diff for security issues:
+Revie the following PR diff for security issues in {file_name}:
 ```diff
 {file_diff}
 ```
@@ -113,6 +119,7 @@ def security_agent(input_state: PullRequestDetailState):
     file_diff = input_state["file_diff"]
     result = graph.invoke(
         {
+            "file_name": input_state["file_name"],
             "file_diff": file_diff,
             "messages": [],
             "review": None
